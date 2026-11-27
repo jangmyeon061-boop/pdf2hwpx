@@ -1,0 +1,12 @@
+# OCR 엔진 (CPU)
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+# PDF·이미지·HWPX
+pdfplumber>=0.11
+pdf2image>=1.17
+opencv-python-headless>=4.10
+numpy>=1.26
+pillow>=10.0
+python-hwpx==7.0.2
+# (선택) Tesseract 폴백 — 시스템에 tesseract-ocr(kor) 가 있을 때만 사용
+pytesseract>=0.3.10

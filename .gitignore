@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+app/paddlex_home/
+app/vendor/
+변환_폴더/
+비식별_대상/
+_판독캐시/
+_로그/
+*_log.txt
+속도측정_결과/

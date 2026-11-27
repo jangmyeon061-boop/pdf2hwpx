@@ -11,6 +11,12 @@ PaddleOCR 모델을 프로그램 폴더(app/paddlex_home)로 미리 받아 두�
 """
 import os, sys
 
+for _s in (sys.stdout, sys.stderr):          # 콘솔 인코딩(cp949·cp1252)에 없는 글자 때문에 멈추지 않게
+    try:
+        _s.reconfigure(errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 dest = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "app", "paddlex_home"))
 os.makedirs(dest, exist_ok=True)

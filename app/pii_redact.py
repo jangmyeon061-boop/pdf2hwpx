@@ -22,6 +22,12 @@ PDF 개인정보 비식별화(부분 마스킹)
 import sys, os, re, argparse
 from collections import Counter
 import cv2
+
+for _s in (sys.stdout, sys.stderr):          # 콘솔 인코딩(cp949·cp1252)에 없는 글자 때문에 멈추지 않게
+    try:
+        _s.reconfigure(errors="replace")
+    except Exception:
+        pass
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,9 +63,9 @@ PATTERNS = [
 def _digits(s):
     return sum(c.isdigit() for c in s)
 
-def find_number_pii(text):
-    """(유형, s, e) 목록(겹침 제거)."""
-    hits, has_bank = [], any(k in text for k in BANK_KW)
+def find_number_pii(text, ctx=""):
+    """(유형, s, e) 목록(겹침 제거). ctx: 바로 앞 OCR 조각(표에서 은행명이 옆 칸에 있는 경우)."""
+    hits, has_bank = [], any(k in (ctx + " " + text) for k in BANK_KW)
     for name, rgx, need_bank in PATTERNS:
         if need_bank and not has_bank:
             continue
@@ -125,6 +131,17 @@ NOT_NAME = {"인적사", "진술서", "주장하", "본인이", "명의로", "�
             "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남",
             "전북", "전남", "경북", "경남", "제주", "서울시", "부산시", "대구시", "인천시", "광주시", "대전시", "울산시"}
 
+# 이름 바로 앞에 붙어 와도 되는 호칭·지위(한국어 OCR은 띄어쓰기를 자주 빠뜨린다: '피의자홍길동은')
+ROLE_WORDS = ("피의자", "피해자", "참고인", "진술인", "고소인", "고발인", "신고자", "목격자", "피고인",
+              "변호인", "대리인", "대표자", "담당자", "수사관", "명의", "형사", "경위", "경사", "경장",
+              "순경", "경감", "경정")
+NAME_START = "(?:(?<![가-힣])|" + "|".join(f"(?<={w})" for w in ROLE_WORDS) + ")"
+_GLUED_JOSA = "가은는을를의에도와과"      # '피의자가같은' → '가같' 같은 오탐 방지
+
+
+NOT_NAME |= set(BANK_KW)                 # '명의국민은행' → '국민' 은 이름이 아님
+
+
 def _looks_like_name(tok):
     return 2 <= len(tok) <= 3 and tok[0] in SURNAMES and tok not in NOT_NAME
 
@@ -142,6 +159,9 @@ def collect_name_candidates(all_texts):
     for t in texts:
         for m in ANCHOR_RE.finditer(t):
             nm = _clean_name(m.group(2))
+            glued = m.start(2) == m.end(1)              # 호칭과 이름 사이 띄어쓰기 없음
+            if glued and nm[:1] in _GLUED_JOSA:
+                continue
             if _looks_like_name(nm):
                 names.add(nm)
         for m in SUFFIX_RE.finditer(t):
@@ -184,7 +204,7 @@ def name_mask_ranges(text, name_pos):
     이름 뒤에 조사/호칭이 붙어도 매칭하되, 더 긴 이름의 일부는 아니게 한다."""
     out = []
     for nm, p in name_pos.items():
-        pat = r"(?<![가-힣])" + re.escape(nm) + r"(?=[" + _AFTER + r"]|[^가-힣]|$)"
+        pat = NAME_START + re.escape(nm) + r"(?=[" + _AFTER + r"]|[^가-힣]|$)"
         for m in re.finditer(pat, text):
             a = m.start() + p
             out.append((a, a + 1))        # 이름의 p번째 글자 1개
@@ -383,7 +403,7 @@ def char_box(line, a, b):
 def collect_targets(text, name_pos, prev=""):
     """한 줄에서 (유형, 지울범위[(a,b)...], 표시값) 목록. prev = 같은 쪽 바로 앞 OCR 조각(주소 라벨·문맥)."""
     tg = []
-    num = find_number_pii(text)
+    num = find_number_pii(text, prev)
     for name, s, e in num:
         tg.append((name, number_mask_ranges(name, text, s, e), text[s:e]))
     ar = [(a, b) for a, b in address_mask_ranges(text, prev)
@@ -683,7 +703,7 @@ def find_name_occurrences(doc, added=(), skip_footer=True):
         if nm in added:      # 사용자가 추가한 이름: 붙여 쓴 경우(피의자홍길동은)도 찾음
             pats.append((nm, re.compile(core)))
         else:
-            pats.append((nm, re.compile(r"(?<![가-힣])" + core + r"(?=[" + _AFTER + r"]|[^가-힣]|$)")))
+            pats.append((nm, re.compile(NAME_START + core + r"(?=[" + _AFTER + r"]|[^가-힣]|$)")))
     occ = []
     for pi, lines in enumerate(doc["pages"]):
         for li, L in enumerate(lines):

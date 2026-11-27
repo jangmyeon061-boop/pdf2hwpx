@@ -22,6 +22,12 @@ PDF → 편집 가능한 한글(HWPX) 변환기 (PaddleOCR 기반, 오프라인)
 import sys, os, re, argparse
 
 import cv2
+
+for _s in (sys.stdout, sys.stderr):          # 콘솔 인코딩(cp949·cp1252)에 없는 글자 때문에 멈추지 않게
+    try:
+        _s.reconfigure(errors="replace")
+    except Exception:
+        pass
 import numpy as np
 
 __version__ = "1.0.0"

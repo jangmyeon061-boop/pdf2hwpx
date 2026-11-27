@@ -1,0 +1,41 @@
+# 가상 예시 문서로 실제 변환·비식별을 돌려 결과를 'demo-output' 브랜치에 올린다(README 그림·영상 재료 + 동작 시험).
+name: demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app/**", "samples/**", "scripts/demo_run.py", ".github/workflows/demo.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: 시스템 패키지(poppler·한글 글꼴)
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils fonts-noto-cjk
+      - name: 파이썬 패키지
+        run: python -m pip install -r requirements.txt
+      - name: 모델 받기
+        run: python scripts/fetch_models.py app/paddlex_home
+      - name: 변환·비식별 실행
+        env:
+          PYTHONUTF8: "1"
+        run: python scripts/demo_run.py out/demo
+      - name: 결과를 demo-output 브랜치에 올리기
+        run: |
+          cd out
+          git init -q -b demo-output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "demo output ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" demo-output

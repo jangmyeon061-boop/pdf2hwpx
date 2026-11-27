@@ -1,0 +1,131 @@
+# 윈도우용 실행판(PDF2HWPX.exe + 파이썬 실행환경 + 모델 + Poppler)을 만들어 릴리즈에 붙인다.
+#  - 릴리즈를 'Publish' 하면 자동 실행
+#  - 또는 Actions 탭에서 수동 실행(tag 입력)
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "올릴 릴리즈 태그 (예: v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+env:
+  POPPLER_URL: https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 버전·태그
+        id: v
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if (-not $tag) { $tag = "${{ github.event.inputs.tag }}" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "ver=$($tag.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      - name: 폴더 구성 + 파이썬 실행환경 복사
+        run: |
+          $D = "dist\PDF2HWPX"
+          New-Item -ItemType Directory -Force $D, "$D\app" | Out-Null
+          New-Item -ItemType Directory -Force "$D\변환_폴더", "$D\비식별_대상" | Out-Null
+          $pyroot = Split-Path (Get-Command python).Source
+          Copy-Item -Recurse $pyroot "$D\python"
+          Remove-Item -Recurse -Force "$D\python\Lib\test", "$D\python\Lib\idlelib\idle_test" -ErrorAction SilentlyContinue
+          Copy-Item app\*.py "$D\app\"
+          Copy-Item LICENSE, README.md "$D\"
+
+      - name: 패키지 설치(실행환경 안으로)
+        run: |
+          $py = "dist\PDF2HWPX\python\python.exe"
+          & $py -m pip install --upgrade pip --no-warn-script-location
+          & $py -m pip install --no-warn-script-location -r requirements.txt
+          & $py -m pip uninstall -y pytesseract
+          & $py -c "import paddle, paddleocr, cv2, hwpx, pdfplumber, pdf2image; print('import ok', paddle.__version__, paddleocr.__version__)"
+
+      - name: Poppler(PDF→그림) 받기
+        run: |
+          Invoke-WebRequest $env:POPPLER_URL -OutFile poppler.zip
+          Expand-Archive poppler.zip -DestinationPath poppler_tmp
+          $bin = Get-ChildItem -Recurse -Directory poppler_tmp | Where-Object { Test-Path "$($_.FullName)\pdftoppm.exe" } | Select-Object -First 1
+          New-Item -ItemType Directory -Force "dist\PDF2HWPX\app\vendor\poppler" | Out-Null
+          Copy-Item "$($bin.FullName)\*" "dist\PDF2HWPX\app\vendor\poppler\"
+
+      - name: OCR 모델 받기(오프라인용)
+        run: dist\PDF2HWPX\python\python.exe scripts\fetch_models.py dist\PDF2HWPX\app\paddlex_home
+
+      - name: 런처 exe 만들기
+        run: |
+          python -m pip install "pyinstaller==6.*"
+          pyinstaller --noconfirm --onefile --windowed --name PDF2HWPX --icon assets\icon.ico --paths app --hidden-import ui_theme app\launcher.py
+          Move-Item dist\PDF2HWPX.exe dist\PDF2HWPX\PDF2HWPX.exe -Force
+
+      - name: 동작 시험(인터넷 없이 가상 예시 문서 변환·비식별)
+        env:
+          PYTHONUTF8: "1"
+          PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+        run: |
+          New-Item -ItemType Directory -Force smoke_work | Out-Null
+          $env:PDF2HWPX_WORKDIR = (Resolve-Path smoke_work).Path
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          Copy-Item samples\*.pdf smoke\
+          $py = "dist\PDF2HWPX\python\python.exe"
+          & $py dist\PDF2HWPX\app\pdf2hwpx.py smoke --redo
+          if ($LASTEXITCODE -ne 0) { throw "변환 실패" }
+          & $py dist\PDF2HWPX\app\pii_redact.py smoke --keep-names --console
+          if ($LASTEXITCODE -ne 0) { throw "비식별 실패" }
+          Get-ChildItem smoke
+          if (-not (Get-ChildItem smoke\*.hwpx)) { throw "hwpx 없음" }
+          & dist\PDF2HWPX\PDF2HWPX.exe --version
+          Get-ChildItem -Recurse -Directory -Filter __pycache__ dist\PDF2HWPX\app | Remove-Item -Recurse -Force
+
+      - name: 사용 안내 넣기
+        run: |
+          @"
+          PDF2HWPX ${{ steps.v.outputs.ver }}  (오프라인 · 설치 불필요)
+
+          1) PDF2HWPX.exe 를 더블클릭합니다.
+          2) 한글 변환: '변환_폴더'에 PDF를 넣고 [정확하게 변환] 또는 [빠르게 변환]
+             → 같은 폴더에 .hwpx 가 생깁니다.
+          3) 비식별: '비식별_대상'에 PDF를 넣고 [이름은 그대로] 또는 [이름도 감춤]
+             → 같은 폴더에 _비식별.pdf 가 생깁니다(로그는 _로그 폴더, 원문 포함 — 확인 후 삭제).
+
+          ※ 폴더째 원하는 곳(예: C:\PDF2HWPX)에 두고 쓰세요. 경로에 특수문자가 없을수록 좋습니다.
+          ※ 스캔 문서의 숫자·계좌·금액은 반드시 원문과 대조하세요.
+          https://github.com/${{ github.repository }}
+          "@ | Out-File -Encoding utf8 "dist\PDF2HWPX\사용법.txt"
+
+      - name: 압축
+        id: zip
+        run: |
+          $name = "PDF2HWPX-${{ steps.v.outputs.ver }}-win64.zip"
+          Push-Location dist
+          7z a -tzip -mcu=on -mx=5 $name PDF2HWPX | Select-Object -Last 3
+          Pop-Location
+          $size = [math]::Round((Get-Item "dist\$name").Length / 1MB)
+          "name=$name" >> $env:GITHUB_OUTPUT
+          Write-Host "zip: $name ($size MB)"
+          (Get-FileHash "dist\$name" -Algorithm SHA256).Hash.ToLower() + "  $name" | Out-File -Encoding ascii "dist\$name.sha256"
+
+      - name: 릴리즈에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.v.outputs.tag }}" "dist\${{ steps.zip.outputs.name }}" "dist\${{ steps.zip.outputs.name }}.sha256" --clobber -R "${{ github.repository }}"

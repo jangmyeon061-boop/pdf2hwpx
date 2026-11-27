@@ -17,6 +17,8 @@ permissions:
   contents: write
 
 env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
   POPPLER_URL: https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip
 
 jobs:

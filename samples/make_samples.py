@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DPI = 200
+DPI = 300
 A4 = (int(210 / 25.4 * DPI), int(297 / 25.4 * DPI))
 A4L = (A4[1], A4[0])
 NOTE = "※ 시연용 가상 문서 — 등장 인물·번호·주소는 모두 꾸며낸 것입니다."
@@ -45,7 +45,7 @@ def scanify(img, seed):
     """스캔본처럼: 약간 기울기·흐림·잡티·종이색."""
     rnd = random.Random(seed)
     img = img.rotate(rnd.uniform(-0.35, 0.35), resample=Image.BICUBIC, fillcolor=255, expand=False)
-    img = img.filter(ImageFilter.GaussianBlur(0.6))
+    img = img.filter(ImageFilter.GaussianBlur(0.5))
     a = np.asarray(img).astype(np.float32)
     a = a * 0.93 + 10                                  # 잉크가 완전 검정이 아니게
     a += np.random.default_rng(seed).normal(0, 6, a.shape)
@@ -93,9 +93,9 @@ def report():
     d.rectangle((c1, y0, R, y0 + rh * len(rows)), outline=0, width=3)
     for i, (k, v) in enumerate(rows):
         y = y0 + rh * i
-        if i:
-            d.line((c1, y, R, y), fill=0, width=2)
         d.rectangle((c1 + 2, y + 2, c2 - 1, y + rh - 2), fill=232)
+        if i:
+            d.line((c1, y, R, y), fill=0, width=3)
         d.text((c1 + mm(3), y + mm(2.6)), k, font=fb, fill=0)
         d.text((c2 + mm(3), y + mm(2.6)), v, font=fb, fill=0)
     d.line((c2, y0, c2, y0 + rh * len(rows)), fill=0, width=2)
@@ -167,13 +167,13 @@ def ledger():
         xs.append(xs[-1] + w)
     y0, rh = mm(38), mm(12)
     nrow = len(rows) + 2
-    d.rectangle((L, y0, R, y0 + rh * nrow), outline=0, width=4)
+    d.rectangle((L + 2, y0 + 2, R - 2, y0 + rh - 2), fill=228)            # 머리행 음영(선보다 먼저)
+    d.rectangle((L, y0, R, y0 + rh * nrow), outline=0, width=5)
     for i in range(1, nrow):
-        d.line((L, y0 + rh * i, R, y0 + rh * i), fill=0, width=2)
-    d.line((L, y0 + rh + 3, R, y0 + rh + 3), fill=0, width=2)      # 머리행 두줄선
+        d.line((L, y0 + rh * i, R, y0 + rh * i), fill=0, width=3)
+    d.line((L, y0 + rh + 5, R, y0 + rh + 5), fill=0, width=2)      # 머리행 두줄선
     for x in xs[1:-1]:
-        d.line((x, y0, x, y0 + rh * (nrow - 1)), fill=0, width=2)
-    d.rectangle((L + 2, y0 + 2, R - 2, y0 + rh - 2), fill=228)
+        d.line((x, y0, x, y0 + rh * (nrow - 1)), fill=0, width=3)
     def cell(ci, ri, s, f, align="c"):
         x0, x1, y = xs[ci], xs[ci + 1], y0 + rh * ri + mm(3)
         w = d.textlength(s, font=f)

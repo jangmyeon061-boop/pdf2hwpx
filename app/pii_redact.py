@@ -140,6 +140,7 @@ _GLUED_JOSA = "가은는을를의에도와과"      # '피의자가같은' → '
 
 
 NOT_NAME |= set(BANK_KW)                 # '명의국민은행' → '국민' 은 이름이 아님
+NOT_NAME |= set(ROLE_WORDS)              # '피의자명의계좌' → '명의' 는 이름이 아님
 
 
 def _looks_like_name(tok):
